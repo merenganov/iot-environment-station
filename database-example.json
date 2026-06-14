@@ -1,0 +1,32 @@
+{
+  "estacion": {
+    "actual": {
+      "temperatura": 24.6,
+      "iluminacion": 72,
+      "lluvia": false,
+      "estadoSistema": "normal",
+      "wifi": true,
+      "actualizadoEn": 1781388000000
+    },
+    "control": {
+      "modo": "automatico",
+      "led": false,
+      "buzzer": false,
+      "alarma": true
+    },
+    "historial": {
+      "muestra_001": {
+        "temperatura": 23.9,
+        "iluminacion": 75,
+        "lluvia": false,
+        "timestamp": 1781387400000
+      },
+      "muestra_002": {
+        "temperatura": 24.6,
+        "iluminacion": 72,
+        "lluvia": false,
+        "timestamp": 1781388000000
+      }
+    }
+  }
+}

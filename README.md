@@ -1,46 +1,73 @@
-# Astro Starter Kit: Basics
+# Estación Ambiental Inteligente
 
-```sh
-npm create astro@latest -- --template basics
+Plantilla en Astro para visualizar datos de temperatura, iluminación, lluvia, conexión Wi-Fi, alertas, gráficas y controles de actuadores.
+
+## Requisitos
+
+- Node.js 22.12.0 o superior
+- npm
+
+## Ejecutar localmente
+
+```bash
+npm install
+npm run dev
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+Abre `http://localhost:4321`.
 
-## 🚀 Project Structure
+Sin archivo `.env`, la página inicia automáticamente en modo demostración y genera nuevas lecturas cada cuatro segundos.
 
-Inside of your Astro project, you'll see the following folders and files:
+## Conectar Firebase Realtime Database
+
+1. Crea un proyecto en Firebase.
+2. Agrega una aplicación web al proyecto.
+3. Activa Realtime Database.
+4. Copia `.env.example` como `.env`.
+5. Pega la configuración de Firebase en las variables `PUBLIC_FIREBASE_*`.
+6. Importa `database-example.json` para probar la estructura.
+7. Reinicia `npm run dev`.
+
+La lectura principal esperada está en:
 
 ```text
-/
-├── public/
-│   └── favicon.svg
-├── src
-│   ├── assets
-│   │   └── astro.svg
-│   ├── components
-│   │   └── Welcome.astro
-│   ├── layouts
-│   │   └── Layout.astro
-│   └── pages
-│       └── index.astro
-└── package.json
+estacion/actual
 ```
 
-To learn more about the folder structure of an Astro project, refer to [our guide on project structure](https://docs.astro.build/en/basics/project-structure/).
+Los controles están en:
 
-## 🧞 Commands
+```text
+estacion/control
+```
 
-All commands are run from the root of the project, from a terminal:
+## Seguridad
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+`firebase-rules.readonly.json` permite lecturas públicas y bloquea todas las escrituras. Sirve para presentar el dashboard sin exponer controles. Para que el ESP32 y el modo manual escriban datos, se deben agregar autenticación y reglas específicas antes de publicar el proyecto.
 
-## 👀 Want to learn more?
+## Compilar
 
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+```bash
+npm run build
+npm run preview
+```
+
+La carpeta generada para publicar es `dist/`.
+
+## Publicar gratuitamente en Firebase Hosting
+
+Instala Firebase CLI e inicia sesión:
+
+```bash
+npm install -g firebase-tools
+firebase login
+```
+
+Después compila y publica:
+
+```bash
+npm run build
+firebase use --add
+firebase deploy --only hosting
+```
+
+`firebase.json` ya está configurado para publicar la carpeta `dist/`.
