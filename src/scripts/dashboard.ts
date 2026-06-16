@@ -27,16 +27,6 @@ type HistoryReading = {
 
 type Severity = 'normal' | 'warning' | 'danger';
 
-const initialReading: EnvironmentReading = {
-  temperatura: 24.6,
-  iluminacion: 72,
-  lluvia: false,
-  wifi: true,
-  estadoSistema: 'normal',
-  actualizadoEn: Date.now()
-};
-
-let currentReading = { ...initialReading };
 let controls: ControlState = {
   modo: 'automatico',
   led: false,
@@ -44,26 +34,22 @@ let controls: ControlState = {
   alarma: true
 };
 
-const history: HistoryReading[] = Array.from({ length: 12 }, (_, index) => ({
-  temperatura: Number((22.8 + Math.sin(index / 2) * 1.8 + index * 0.08).toFixed(1)),
-  iluminacion: Math.round(68 + Math.cos(index / 2) * 11),
-  lluvia: false,
-  timestamp: Date.now() - (11 - index) * 60_000
-}));
+const history: HistoryReading[] = [];
 
 const getElement = <T extends HTMLElement>(id: string): T | null =>
   document.getElementById(id) as T | null;
 
 const chartCanvas = getElement<HTMLCanvasElement>('sensor-chart');
+
 const chart = chartCanvas
   ? new Chart(chartCanvas, {
       type: 'line',
       data: {
-        labels: history.map((item) => formatTime(item.timestamp)),
+        labels: [] as string[],
         datasets: [
           {
             label: 'Temperatura °C',
-            data: history.map((item) => item.temperatura),
+            data: [] as number[],
             tension: 0.35,
             borderWidth: 3,
             pointRadius: 2,
@@ -71,7 +57,7 @@ const chart = chartCanvas
           },
           {
             label: 'Iluminación %',
-            data: history.map((item) => item.iluminacion),
+            data: [] as number[],
             tension: 0.35,
             borderWidth: 3,
             pointRadius: 2,
@@ -82,19 +68,30 @@ const chart = chartCanvas
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
         scales: {
           y: {
             min: 0,
             max: 45,
-            title: { display: true, text: 'Temperatura °C' }
+            title: {
+              display: true,
+              text: 'Temperatura °C'
+            }
           },
           y1: {
             min: 0,
             max: 100,
             position: 'right',
-            grid: { drawOnChartArea: false },
-            title: { display: true, text: 'Iluminación %' }
+            grid: {
+              drawOnChartArea: false
+            },
+            title: {
+              display: true,
+              text: 'Iluminación %'
+            }
           }
         }
       }
@@ -102,6 +99,10 @@ const chart = chartCanvas
   : null;
 
 function formatTime(timestamp: number): string {
+  if (!timestamp || Number.isNaN(timestamp)) {
+    return '--:--';
+  }
+
   return new Intl.DateTimeFormat('es-MX', {
     hour: '2-digit',
     minute: '2-digit'
@@ -109,6 +110,10 @@ function formatTime(timestamp: number): string {
 }
 
 function formatDateTime(timestamp: number): string {
+  if (!timestamp || Number.isNaN(timestamp)) {
+    return 'Sin datos';
+  }
+
   return new Intl.DateTimeFormat('es-MX', {
     dateStyle: 'medium',
     timeStyle: 'medium'
@@ -133,30 +138,55 @@ function setCardState(
   unit: string,
   severity: Severity,
   description: string
-) {
-  const card = document.querySelector<HTMLElement>(`[data-sensor-card="${id}"]`);
-  const valueElement = getElement(`value-${id}`);
-  const unitElement = getElement(`unit-${id}`);
-  const statusElement = getElement(`status-${id}`);
-  const descriptionElement = getElement(`description-${id}`);
+): void {
+  const card = document.querySelector<HTMLElement>(
+    `[data-sensor-card="${id}"]`
+  );
+  const valueElement = getElement<HTMLElement>(`value-${id}`);
+  const unitElement = getElement<HTMLElement>(`unit-${id}`);
+  const statusElement = getElement<HTMLElement>(`status-${id}`);
+  const descriptionElement = getElement<HTMLElement>(
+    `description-${id}`
+  );
 
-  if (!card || !valueElement || !unitElement || !statusElement || !descriptionElement) return;
+  if (
+    !card ||
+    !valueElement ||
+    !unitElement ||
+    !statusElement ||
+    !descriptionElement
+  ) {
+    return;
+  }
 
-  card.classList.remove('status-normal', 'status-warning', 'status-danger');
+  card.classList.remove(
+    'status-normal',
+    'status-warning',
+    'status-danger'
+  );
   card.classList.add(`status-${severity}`);
+
   valueElement.textContent = value;
   unitElement.textContent = unit;
   descriptionElement.textContent = description;
+
   statusElement.textContent =
-    severity === 'normal' ? 'Normal' : severity === 'warning' ? 'Advertencia' : 'Alerta';
+    severity === 'normal'
+      ? 'Normal'
+      : severity === 'warning'
+        ? 'Advertencia'
+        : 'Alerta';
 }
 
-function updateDashboard(reading: EnvironmentReading) {
-  currentReading = reading;
+function updateDashboard(reading: EnvironmentReading): void {
   const tempSeverity = temperatureSeverity(reading.temperatura);
   const illuminationSeverity = lightSeverity(reading.iluminacion);
-  const rainSeverity: Severity = reading.lluvia ? 'danger' : 'normal';
-  const wifiSeverity: Severity = reading.wifi ? 'normal' : 'danger';
+  const rainSeverity: Severity = reading.lluvia
+    ? 'danger'
+    : 'normal';
+  const wifiSeverity: Severity = reading.wifi
+    ? 'normal'
+    : 'danger';
 
   setCardState(
     'temperature',
@@ -202,28 +232,43 @@ function updateDashboard(reading: EnvironmentReading) {
       : 'No se están recibiendo datos desde el ESP32.'
   );
 
-  const worstSeverity: Severity = [tempSeverity, illuminationSeverity, rainSeverity, wifiSeverity].includes(
-    'danger'
-  )
+  const severities: Severity[] = [
+    tempSeverity,
+    illuminationSeverity,
+    rainSeverity,
+    wifiSeverity
+  ];
+
+  const worstSeverity: Severity = severities.includes('danger')
     ? 'danger'
-    : [tempSeverity, illuminationSeverity].includes('warning')
+    : severities.includes('warning')
       ? 'warning'
       : 'normal';
 
   updateSystemSummary(worstSeverity);
   updateAlerts(reading, tempSeverity, illuminationSeverity);
 
-  const lastUpdate = getElement('last-update');
-  if (lastUpdate) lastUpdate.textContent = formatDateTime(reading.actualizadoEn || Date.now());
+  const lastUpdate = getElement<HTMLElement>('last-update');
+
+  if (lastUpdate) {
+    lastUpdate.textContent = formatDateTime(reading.actualizadoEn);
+  }
 }
 
-function updateSystemSummary(severity: Severity) {
-  const summary = getElement('system-summary');
-  const icon = getElement('system-icon');
-  const status = getElement('system-status');
-  if (!summary || !icon || !status) return;
+function updateSystemSummary(severity: Severity): void {
+  const summary = getElement<HTMLElement>('system-summary');
+  const icon = getElement<HTMLElement>('system-icon');
+  const status = getElement<HTMLElement>('system-status');
 
-  summary.classList.remove('status-normal', 'status-warning', 'status-danger');
+  if (!summary || !icon || !status) {
+    return;
+  }
+
+  summary.classList.remove(
+    'status-normal',
+    'status-warning',
+    'status-danger'
+  );
   summary.classList.add(`status-${severity}`);
 
   if (severity === 'danger') {
@@ -242,25 +287,42 @@ function updateAlerts(
   reading: EnvironmentReading,
   tempSeverity: Severity,
   lightSeverityValue: Severity
-) {
-  const alertList = getElement('alert-list');
-  const count = getElement('alert-count');
-  if (!alertList || !count) return;
+): void {
+  const alertList = getElement<HTMLElement>('alert-list');
+  const count = getElement<HTMLElement>('alert-count');
 
-  const alerts: Array<{ title: string; message: string; severity: Severity }> = [];
+  if (!alertList || !count) {
+    return;
+  }
+
+  const alerts: Array<{
+    title: string;
+    message: string;
+    severity: Severity;
+  }> = [];
 
   if (tempSeverity !== 'normal') {
     alerts.push({
-      title: tempSeverity === 'danger' ? 'ALERTA: temperatura alta' : 'Advertencia de temperatura',
-      message: `La lectura actual es de ${reading.temperatura.toFixed(1)} °C.`,
+      title:
+        tempSeverity === 'danger'
+          ? 'ALERTA: temperatura alta'
+          : 'Advertencia de temperatura',
+      message:
+        `La lectura actual es de ` +
+        `${reading.temperatura.toFixed(1)} °C.`,
       severity: tempSeverity
     });
   }
 
   if (lightSeverityValue !== 'normal') {
     alerts.push({
-      title: lightSeverityValue === 'danger' ? 'Baja iluminación' : 'Iluminación disminuyendo',
-      message: `Nivel actual: ${Math.round(reading.iluminacion)} %.`,
+      title:
+        lightSeverityValue === 'danger'
+          ? 'Baja iluminación'
+          : 'Iluminación disminuyendo',
+      message:
+        `Nivel actual: ` +
+        `${Math.round(reading.iluminacion)} %.`,
       severity: lightSeverityValue
     });
   }
@@ -276,19 +338,23 @@ function updateAlerts(
   if (!reading.wifi) {
     alerts.push({
       title: 'ESP32 sin conexión',
-      message: 'Revisar la red Wi-Fi y la alimentación del dispositivo.',
+      message:
+        'Revisar la red Wi-Fi y la alimentación del dispositivo.',
       severity: 'danger'
     });
   }
 
-  count.textContent = `${alerts.length} ${alerts.length === 1 ? 'activa' : 'activas'}`;
+  count.textContent =
+    `${alerts.length} ` +
+    `${alerts.length === 1 ? 'activa' : 'activas'}`;
 
-  if (!alerts.length) {
+  if (alerts.length === 0) {
     alertList.innerHTML = `
       <div class="empty-state">
         <span aria-hidden="true">✓</span>
         <p>No hay alertas activas.</p>
-      </div>`;
+      </div>
+    `;
     return;
   }
 
@@ -296,173 +362,325 @@ function updateAlerts(
     .map(
       (alert) => `
         <div class="alert-item status-${alert.severity}">
-          <span class="alert-item__icon" aria-hidden="true">${alert.severity === 'danger' ? '!' : '⚠'}</span>
+          <span
+            class="alert-item__icon"
+            aria-hidden="true"
+          >
+            ${alert.severity === 'danger' ? '!' : '⚠'}
+          </span>
           <div>
             <strong>${alert.title}</strong>
             <p>${alert.message}</p>
           </div>
-        </div>`
+        </div>
+      `
     )
     .join('');
 }
 
-function addHistoryReading(reading: EnvironmentReading) {
+function addHistoryReading(reading: EnvironmentReading): void {
+  const timestamp = reading.actualizadoEn || Date.now();
+  const lastReading = history[history.length - 1];
+
+  if (lastReading && lastReading.timestamp === timestamp) {
+    return;
+  }
+
   history.push({
     temperatura: reading.temperatura,
     iluminacion: reading.iluminacion,
     lluvia: reading.lluvia,
-    timestamp: reading.actualizadoEn || Date.now()
+    timestamp
   });
 
-  while (history.length > 12) history.shift();
-  if (!chart) return;
+  while (history.length > 12) {
+    history.shift();
+  }
 
-  chart.data.labels = history.map((item) => formatTime(item.timestamp));
-  chart.data.datasets[0].data = history.map((item) => item.temperatura);
-  chart.data.datasets[1].data = history.map((item) => item.iluminacion);
+  if (!chart) {
+    return;
+  }
+
+  chart.data.labels = history.map((item) =>
+    formatTime(item.timestamp)
+  );
+
+  chart.data.datasets[0].data = history.map(
+    (item) => item.temperatura
+  );
+
+  chart.data.datasets[1].data = history.map(
+    (item) => item.iluminacion
+  );
+
   chart.update();
 }
 
-function updateConnection(connected: boolean, label: string) {
-  const dot = getElement('connection-dot');
-  const connectionLabel = getElement('connection-label');
-  if (!dot || !connectionLabel) return;
+function updateConnection(
+  connected: boolean,
+  label: string
+): void {
+  const dot = getElement<HTMLElement>('connection-dot');
+  const connectionLabel =
+    getElement<HTMLElement>('connection-label');
+
+  if (!dot || !connectionLabel) {
+    return;
+  }
 
   dot.classList.toggle('offline', !connected);
   connectionLabel.textContent = label;
 }
 
-function updateControlInterface() {
-  const currentMode = getElement('current-mode');
-  const note = getElement('controls-note');
+function updateControlInterface(): void {
+  const currentMode = getElement<HTMLElement>('current-mode');
+  const note = getElement<HTMLElement>('controls-note');
 
-  if (currentMode) currentMode.textContent = controls.modo === 'automatico' ? 'Automático' : 'Manual';
+  if (currentMode) {
+    currentMode.textContent =
+      controls.modo === 'automatico'
+        ? 'Automático'
+        : 'Manual';
+  }
+
   if (note) {
     note.textContent =
       controls.modo === 'automatico'
-        ? 'En modo automático, el ESP32 decide qué actuadores activar según las lecturas.'
-        : 'En modo manual puedes activar o desactivar los actuadores desde este panel.';
+        ? 'En modo automático, el ESP32 decide qué ' +
+          'actuadores activar según las lecturas.'
+        : 'En modo manual puedes activar o desactivar ' +
+          'los actuadores desde este panel.';
   }
 
-  document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.mode === controls.modo);
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('[data-control]').forEach((button) => {
-    const controlName = button.dataset.control as keyof Omit<ControlState, 'modo'>;
-    const enabled = Boolean(controls[controlName]);
-    button.classList.toggle('active', enabled);
-    button.disabled = controls.modo !== 'manual';
-    button.setAttribute('aria-pressed', String(enabled));
-    const label = button.querySelector('small');
-    if (label) {
-      label.textContent = controlName === 'alarma'
-        ? enabled ? 'Activadas' : 'Desactivadas'
-        : enabled ? 'Encendido' : 'Apagado';
-    }
-  });
-}
-
-async function persistControl(path: string, value: boolean | string) {
-  if (!database) return;
-  try {
-    await set(ref(database, `estacion/control/${path}`), value);
-  } catch (error) {
-    console.error('No fue posible actualizar el control en Firebase:', error);
-  }
-}
-
-function configureControls() {
-  document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const mode = button.dataset.mode;
-      if (mode !== 'automatico' && mode !== 'manual') return;
-      controls.modo = mode;
-      updateControlInterface();
-      void persistControl('modo', mode);
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-mode]')
+    .forEach((button) => {
+      button.classList.toggle(
+        'active',
+        button.dataset.mode === controls.modo
+      );
     });
-  });
 
-  document.querySelectorAll<HTMLButtonElement>('[data-control]').forEach((button) => {
-    button.addEventListener('click', () => {
-      if (controls.modo !== 'manual') return;
-      const controlName = button.dataset.control as keyof Omit<ControlState, 'modo'>;
-      controls[controlName] = !controls[controlName];
-      updateControlInterface();
-      void persistControl(controlName, controls[controlName]);
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-control]')
+    .forEach((button) => {
+      const controlName =
+        button.dataset.control as keyof Omit<
+          ControlState,
+          'modo'
+        >;
+
+      const enabled = Boolean(controls[controlName]);
+
+      button.classList.toggle('active', enabled);
+      button.disabled = controls.modo !== 'manual';
+      button.setAttribute(
+        'aria-pressed',
+        String(enabled)
+      );
+
+      const label = button.querySelector('small');
+
+      if (label) {
+        label.textContent =
+          controlName === 'alarma'
+            ? enabled
+              ? 'Activadas'
+              : 'Desactivadas'
+            : enabled
+              ? 'Encendido'
+              : 'Apagado';
+      }
     });
-  });
 }
 
-function startDemoMode() {
-  const source = getElement('data-source');
-  if (source) source.textContent = 'Simulación local';
-  updateConnection(true, 'Demostración activa');
-  updateDashboard(initialReading);
-
-  window.setInterval(() => {
-    const nextReading: EnvironmentReading = {
-      temperatura: Number(Math.max(18, Math.min(36, currentReading.temperatura + (Math.random() - 0.48) * 2.2)).toFixed(1)),
-      iluminacion: Math.round(Math.max(10, Math.min(100, currentReading.iluminacion + (Math.random() - 0.5) * 18))),
-      lluvia: Math.random() > 0.9 ? !currentReading.lluvia : currentReading.lluvia,
-      wifi: true,
-      estadoSistema: 'simulado',
-      actualizadoEn: Date.now()
-    };
-
-    updateDashboard(nextReading);
-    addHistoryReading(nextReading);
-  }, 4000);
-}
-
-function startFirebaseMode() {
+async function persistControl(
+  path: string,
+  value: boolean | string
+): Promise<void> {
   if (!database) {
-    startDemoMode();
     return;
   }
 
-  const source = getElement('data-source');
-  if (source) source.textContent = 'Firebase Realtime Database';
+  try {
+    await set(
+      ref(database, `estacion/control/${path}`),
+      value
+    );
+  } catch (error) {
+    console.error(
+      'No fue posible actualizar el control en Firebase:',
+      error
+    );
+  }
+}
+
+function configureControls(): void {
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-mode]')
+    .forEach((button) => {
+      button.addEventListener('click', () => {
+        const mode = button.dataset.mode;
+
+        if (
+          mode !== 'automatico' &&
+          mode !== 'manual'
+        ) {
+          return;
+        }
+
+        controls.modo = mode;
+        updateControlInterface();
+        void persistControl('modo', mode);
+      });
+    });
+
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-control]')
+    .forEach((button) => {
+      button.addEventListener('click', () => {
+        if (controls.modo !== 'manual') {
+          return;
+        }
+
+        const controlName =
+          button.dataset.control as keyof Omit<
+            ControlState,
+            'modo'
+          >;
+
+        controls[controlName] =
+          !controls[controlName];
+
+        updateControlInterface();
+
+        void persistControl(
+          controlName,
+          controls[controlName]
+        );
+      });
+    });
+}
+
+function showFirebaseUnavailable(message: string): void {
+  const source = getElement<HTMLElement>('data-source');
+  const lastUpdate = getElement<HTMLElement>('last-update');
+
+  if (source) {
+    source.textContent = 'Firebase no disponible';
+  }
+
+  if (lastUpdate) {
+    lastUpdate.textContent = 'Sin datos';
+  }
+
+  updateConnection(false, message);
+  console.error(message);
+}
+
+function startFirebaseMode(): void {
+  if (!database) {
+    showFirebaseUnavailable(
+      'No se pudo inicializar Firebase'
+    );
+    return;
+  }
+
+  const source = getElement<HTMLElement>('data-source');
+
+  if (source) {
+    source.textContent = 'Firebase Realtime Database';
+  }
+
   updateConnection(true, 'Firebase conectado');
 
   onValue(
     ref(database, 'estacion/actual'),
     (snapshot) => {
-      const value = snapshot.val() as Partial<EnvironmentReading> | null;
-      if (!value) return;
+      const value =
+        snapshot.val() as
+          | Partial<EnvironmentReading>
+          | null;
+
+      if (!value) {
+        updateConnection(
+          true,
+          'Firebase conectado, sin datos'
+        );
+        return;
+      }
 
       const reading: EnvironmentReading = {
-        temperatura: Number(value.temperatura ?? currentReading.temperatura),
-        iluminacion: Number(value.iluminacion ?? currentReading.iluminacion),
+        temperatura: Number(value.temperatura ?? 0),
+        iluminacion: Number(value.iluminacion ?? 0),
         lluvia: Boolean(value.lluvia),
         wifi: value.wifi !== false,
-        estadoSistema: String(value.estadoSistema ?? 'normal'),
-        actualizadoEn: Number(value.actualizadoEn ?? Date.now())
+        estadoSistema: String(
+          value.estadoSistema ?? 'normal'
+        ),
+        actualizadoEn: Number(
+          value.actualizadoEn ?? Date.now()
+        )
       };
+
+      console.log(
+        'Lectura recibida desde Firebase:',
+        reading
+      );
+
+      updateConnection(true, 'Firebase conectado');
       updateDashboard(reading);
       addHistoryReading(reading);
     },
-    () => updateConnection(false, 'Error de conexión')
+    (error) => {
+      console.error(
+        'Error al leer estacion/actual:',
+        error
+      );
+      updateConnection(false, 'Error de conexión');
+    }
   );
 
-  onValue(ref(database, 'estacion/control'), (snapshot) => {
-    const value = snapshot.val() as Partial<ControlState> | null;
-    if (!value) return;
-    controls = {
-      modo: value.modo === 'manual' ? 'manual' : 'automatico',
-      led: Boolean(value.led),
-      buzzer: Boolean(value.buzzer),
-      alarma: value.alarma !== false
-    };
-    updateControlInterface();
-  });
+  onValue(
+    ref(database, 'estacion/control'),
+    (snapshot) => {
+      const value =
+        snapshot.val() as
+          | Partial<ControlState>
+          | null;
+
+      if (!value) {
+        return;
+      }
+
+      controls = {
+        modo:
+          value.modo === 'manual'
+            ? 'manual'
+            : 'automatico',
+        led: Boolean(value.led),
+        buzzer: Boolean(value.buzzer),
+        alarma: value.alarma !== false
+      };
+
+      updateControlInterface();
+    },
+    (error) => {
+      console.error(
+        'Error al leer estacion/control:',
+        error
+      );
+    }
+  );
 }
 
 configureControls();
 updateControlInterface();
 
-if (firebaseConfigured) {
+if (firebaseConfigured && database) {
   startFirebaseMode();
 } else {
-  startDemoMode();
+  showFirebaseUnavailable(
+    'Firebase no está configurado'
+  );
 }
