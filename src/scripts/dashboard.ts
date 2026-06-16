@@ -1,40 +1,38 @@
 import Chart from 'chart.js/auto';
-import { onValue, ref, set } from 'firebase/database';
+import {
+  limitToLast,
+  onValue,
+  orderByChild,
+  query,
+  ref,
+  set
+} from 'firebase/database';
 import { database, firebaseConfigured } from '../lib/firebase';
 
 type EnvironmentReading = {
   temperatura: number;
   iluminacion: number;
   lluvia: boolean;
+  alarmaActiva: boolean;
   wifi: boolean;
   estadoSistema?: string;
   actualizadoEn: number;
-};
-
-type ControlState = {
-  modo: 'automatico' | 'manual';
-  led: boolean;
-  buzzer: boolean;
-  alarma: boolean;
 };
 
 type HistoryReading = {
   temperatura: number;
   iluminacion: number;
   lluvia: boolean;
+  alarmaActiva?: boolean;
   timestamp: number;
 };
 
 type Severity = 'normal' | 'warning' | 'danger';
 
-let controls: ControlState = {
-  modo: 'automatico',
-  led: false,
-  buzzer: false,
-  alarma: true
-};
-
 const history: HistoryReading[] = [];
+
+let alarmActive = false;
+let stopCommandPending = false;
 
 const getElement = <T extends HTMLElement>(id: string): T | null =>
   document.getElementById(id) as T | null;
@@ -179,11 +177,17 @@ function setCardState(
 }
 
 function updateDashboard(reading: EnvironmentReading): void {
+  alarmActive = reading.alarmaActiva;
+  updateAlarmControlInterface();
+
   const tempSeverity = temperatureSeverity(reading.temperatura);
   const illuminationSeverity = lightSeverity(reading.iluminacion);
-  const rainSeverity: Severity = reading.lluvia
-    ? 'danger'
-    : 'normal';
+
+  const rainSeverity: Severity =
+    reading.lluvia || reading.alarmaActiva
+      ? 'danger'
+      : 'normal';
+
   const wifiSeverity: Severity = reading.wifi
     ? 'normal'
     : 'danger';
@@ -212,14 +216,30 @@ function updateDashboard(reading: EnvironmentReading): void {
         : 'Nivel de iluminación adecuado.'
   );
 
+  let rainValue = 'Sin lluvia';
+  let rainDescription =
+    'No se detecta presencia de lluvia y la alarma está apagada.';
+
+  if (reading.lluvia && reading.alarmaActiva) {
+    rainValue = 'Humedad detectada';
+    rainDescription =
+      'El sensor detecta humedad y el buzzer permanece activo.';
+  } else if (!reading.lluvia && reading.alarmaActiva) {
+    rainValue = 'Alarma activa';
+    rainDescription =
+      'El sensor ya está seco, pero el buzzer seguirá activo hasta apagar la alarma.';
+  } else if (reading.lluvia && !reading.alarmaActiva) {
+    rainValue = 'Humedad detectada';
+    rainDescription =
+      'La humedad continúa presente, pero la alarma fue reconocida y apagada.';
+  }
+
   setCardState(
     'rain',
-    reading.lluvia ? 'Lluvia detectada' : 'Sin lluvia',
+    rainValue,
     '',
     rainSeverity,
-    reading.lluvia
-      ? 'Presencia de humedad o lluvia: cerrar ventana.'
-      : 'No se detecta presencia de lluvia.'
+    rainDescription
   );
 
   setCardState(
@@ -251,7 +271,9 @@ function updateDashboard(reading: EnvironmentReading): void {
   const lastUpdate = getElement<HTMLElement>('last-update');
 
   if (lastUpdate) {
-    lastUpdate.textContent = formatDateTime(reading.actualizadoEn);
+    lastUpdate.textContent = formatDateTime(
+      reading.actualizadoEn
+    );
   }
 }
 
@@ -273,7 +295,9 @@ function updateSystemSummary(severity: Severity): void {
 
   if (severity === 'danger') {
     icon.textContent = '!';
-    status.textContent = 'Alerta activa';
+    status.textContent = alarmActive
+      ? 'Alarma sonora activa'
+      : 'Alerta activa';
   } else if (severity === 'warning') {
     icon.textContent = '⚠';
     status.textContent = 'Requiere atención';
@@ -327,10 +351,19 @@ function updateAlerts(
     });
   }
 
-  if (reading.lluvia) {
+  if (reading.alarmaActiva) {
     alerts.push({
-      title: 'Presencia de humedad / lluvia',
-      message: 'Se recomienda cerrar la ventana.',
+      title: 'Alarma sonora activa',
+      message: reading.lluvia
+        ? 'Se detectó humedad. El buzzer seguirá encendido hasta presionar “Apagar alarma”.'
+        : 'La humedad ya no está presente, pero el buzzer continúa enclavado hasta reconocer la alarma.',
+      severity: 'danger'
+    });
+  } else if (reading.lluvia) {
+    alerts.push({
+      title: 'Humedad detectada',
+      message:
+        'El sensor continúa mojado, pero la alarma sonora fue apagada.',
       severity: 'danger'
     });
   }
@@ -378,24 +411,21 @@ function updateAlerts(
     .join('');
 }
 
-function addHistoryReading(reading: EnvironmentReading): void {
-  const timestamp = reading.actualizadoEn || Date.now();
-  const lastReading = history[history.length - 1];
+function renderHistoryChart(
+  readings: HistoryReading[]
+): void {
+  const orderedReadings = [...readings]
+    .filter(
+      (item) =>
+        Number.isFinite(item.temperatura) &&
+        Number.isFinite(item.iluminacion) &&
+        Number.isFinite(item.timestamp) &&
+        item.timestamp > 0
+    )
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(-12);
 
-  if (lastReading && lastReading.timestamp === timestamp) {
-    return;
-  }
-
-  history.push({
-    temperatura: reading.temperatura,
-    iluminacion: reading.iluminacion,
-    lluvia: reading.lluvia,
-    timestamp
-  });
-
-  while (history.length > 12) {
-    history.shift();
-  }
+  history.splice(0, history.length, ...orderedReadings);
 
   if (!chart) {
     return;
@@ -432,134 +462,157 @@ function updateConnection(
   connectionLabel.textContent = label;
 }
 
-function updateControlInterface(): void {
-  const currentMode = getElement<HTMLElement>('current-mode');
+// =====================================================
+// PREPARAR LA INTERFAZ PARA DEJAR SOLO "APAGAR ALARMA"
+// No es necesario modificar index.astro.
+// =====================================================
+function prepareAlarmControlPanel(): void {
+  const controlsPanel =
+    document.querySelector<HTMLElement>('.controls-panel');
+
+  if (!controlsPanel) {
+    return;
+  }
+
+  const title =
+    controlsPanel.querySelector<HTMLElement>('h2');
+  const eyebrow =
+    controlsPanel.querySelector<HTMLElement>('.eyebrow');
+  const modeSwitch =
+    controlsPanel.querySelector<HTMLElement>('.mode-switch');
   const note = getElement<HTMLElement>('controls-note');
 
-  if (currentMode) {
-    currentMode.textContent =
-      controls.modo === 'automatico'
-        ? 'Automático'
-        : 'Manual';
+  if (title) {
+    title.textContent = 'Control de alarma sonora';
+  }
+
+  if (eyebrow) {
+    eyebrow.textContent = 'Reconocimiento de alertas';
+  }
+
+  if (modeSwitch) {
+    modeSwitch.style.display = 'none';
   }
 
   if (note) {
     note.textContent =
-      controls.modo === 'automatico'
-        ? 'En modo automático, el ESP32 decide qué ' +
-          'actuadores activar según las lecturas.'
-        : 'En modo manual puedes activar o desactivar ' +
-          'los actuadores desde este panel.';
+      'Cuando se detecta humedad, el buzzer permanece encendido aunque el sensor vuelva a estar seco. Solo se apaga con este botón.';
   }
-
-  document
-    .querySelectorAll<HTMLButtonElement>('[data-mode]')
-    .forEach((button) => {
-      button.classList.toggle(
-        'active',
-        button.dataset.mode === controls.modo
-      );
-    });
 
   document
     .querySelectorAll<HTMLButtonElement>('[data-control]')
     .forEach((button) => {
-      const controlName =
-        button.dataset.control as keyof Omit<
-          ControlState,
-          'modo'
-        >;
+      if (button.dataset.control !== 'alarma') {
+        button.style.display = 'none';
+        return;
+      }
 
-      const enabled = Boolean(controls[controlName]);
-
-      button.classList.toggle('active', enabled);
-      button.disabled = controls.modo !== 'manual';
+      button.classList.remove('active');
       button.setAttribute(
-        'aria-pressed',
-        String(enabled)
+        'aria-label',
+        'Apagar alarma sonora'
       );
 
-      const label = button.querySelector('small');
+      const icon = button.querySelector<HTMLElement>(
+        'span[aria-hidden="true"]'
+      );
+      const strong =
+        button.querySelector<HTMLElement>('strong');
 
-      if (label) {
-        label.textContent =
-          controlName === 'alarma'
-            ? enabled
-              ? 'Activadas'
-              : 'Desactivadas'
-            : enabled
-              ? 'Encendido'
-              : 'Apagado';
+      if (icon) {
+        icon.textContent = '🔕';
+      }
+
+      if (strong) {
+        strong.textContent = 'Apagar alarma';
       }
     });
+
+  const currentMode = getElement<HTMLElement>('current-mode');
+
+  if (currentMode) {
+    currentMode.textContent = 'Alarma enclavada';
+
+    const container = currentMode.parentElement;
+    const label = container?.querySelector<HTMLElement>('span');
+
+    if (label) {
+      label.textContent = 'Funcionamiento';
+    }
+  }
 }
 
-async function persistControl(
-  path: string,
-  value: boolean | string
-): Promise<void> {
-  if (!database) {
+function updateAlarmControlInterface(): void {
+  const button =
+    document.querySelector<HTMLButtonElement>(
+      '[data-control="alarma"]'
+    );
+
+  if (!button) {
     return;
   }
 
+  const small = button.querySelector<HTMLElement>('small');
+
+  button.classList.toggle(
+    'active',
+    alarmActive && !stopCommandPending
+  );
+
+  button.disabled =
+    !alarmActive || stopCommandPending;
+
+  button.setAttribute(
+    'aria-pressed',
+    String(alarmActive)
+  );
+
+  if (!small) {
+    return;
+  }
+
+  if (stopCommandPending) {
+    small.textContent = 'Enviando orden…';
+  } else if (alarmActive) {
+    small.textContent = 'Alarma activa: presiona para apagar';
+  } else {
+    small.textContent = 'Sin alarma activa';
+  }
+}
+
+async function sendStopAlarmCommand(): Promise<void> {
+  if (!database || !alarmActive || stopCommandPending) {
+    return;
+  }
+
+  stopCommandPending = true;
+  updateAlarmControlInterface();
+
   try {
     await set(
-      ref(database, `estacion/control/${path}`),
-      value
+      ref(database, 'estacion/control/apagarAlarma'),
+      true
     );
   } catch (error) {
+    stopCommandPending = false;
+    updateAlarmControlInterface();
+
     console.error(
-      'No fue posible actualizar el control en Firebase:',
+      'No fue posible enviar la orden para apagar la alarma:',
       error
     );
   }
 }
 
-function configureControls(): void {
-  document
-    .querySelectorAll<HTMLButtonElement>('[data-mode]')
-    .forEach((button) => {
-      button.addEventListener('click', () => {
-        const mode = button.dataset.mode;
+function configureAlarmControl(): void {
+  const button =
+    document.querySelector<HTMLButtonElement>(
+      '[data-control="alarma"]'
+    );
 
-        if (
-          mode !== 'automatico' &&
-          mode !== 'manual'
-        ) {
-          return;
-        }
-
-        controls.modo = mode;
-        updateControlInterface();
-        void persistControl('modo', mode);
-      });
-    });
-
-  document
-    .querySelectorAll<HTMLButtonElement>('[data-control]')
-    .forEach((button) => {
-      button.addEventListener('click', () => {
-        if (controls.modo !== 'manual') {
-          return;
-        }
-
-        const controlName =
-          button.dataset.control as keyof Omit<
-            ControlState,
-            'modo'
-          >;
-
-        controls[controlName] =
-          !controls[controlName];
-
-        updateControlInterface();
-
-        void persistControl(
-          controlName,
-          controls[controlName]
-        );
-      });
-    });
+  button?.addEventListener('click', () => {
+    void sendStopAlarmCommand();
+  });
 }
 
 function showFirebaseUnavailable(message: string): void {
@@ -614,6 +667,7 @@ function startFirebaseMode(): void {
         temperatura: Number(value.temperatura ?? 0),
         iluminacion: Number(value.iluminacion ?? 0),
         lluvia: Boolean(value.lluvia),
+        alarmaActiva: Boolean(value.alarmaActiva),
         wifi: value.wifi !== false,
         estadoSistema: String(
           value.estadoSistema ?? 'normal'
@@ -623,14 +677,8 @@ function startFirebaseMode(): void {
         )
       };
 
-      console.log(
-        'Lectura recibida desde Firebase:',
-        reading
-      );
-
       updateConnection(true, 'Firebase conectado');
       updateDashboard(reading);
-      addHistoryReading(reading);
     },
     (error) => {
       console.error(
@@ -641,41 +689,63 @@ function startFirebaseMode(): void {
     }
   );
 
+  const historyQuery = query(
+    ref(database, 'estacion/historial'),
+    orderByChild('timestamp'),
+    limitToLast(12)
+  );
+
   onValue(
-    ref(database, 'estacion/control'),
+    historyQuery,
     (snapshot) => {
-      const value =
-        snapshot.val() as
-          | Partial<ControlState>
+      const readings: HistoryReading[] = [];
+
+      snapshot.forEach((childSnapshot) => {
+        const value = childSnapshot.val() as
+          | Partial<HistoryReading>
           | null;
 
-      if (!value) {
-        return;
-      }
+        if (!value) {
+          return;
+        }
 
-      controls = {
-        modo:
-          value.modo === 'manual'
-            ? 'manual'
-            : 'automatico',
-        led: Boolean(value.led),
-        buzzer: Boolean(value.buzzer),
-        alarma: value.alarma !== false
-      };
+        readings.push({
+          temperatura: Number(value.temperatura ?? 0),
+          iluminacion: Number(value.iluminacion ?? 0),
+          lluvia: Boolean(value.lluvia),
+          alarmaActiva: Boolean(value.alarmaActiva),
+          timestamp: Number(value.timestamp ?? 0)
+        });
+      });
 
-      updateControlInterface();
+      renderHistoryChart(readings);
     },
     (error) => {
       console.error(
-        'Error al leer estacion/control:',
+        'Error al leer estacion/historial:',
+        error
+      );
+    }
+  );
+
+  onValue(
+    ref(database, 'estacion/control/apagarAlarma'),
+    (snapshot) => {
+      stopCommandPending = snapshot.val() === true;
+      updateAlarmControlInterface();
+    },
+    (error) => {
+      console.error(
+        'Error al leer el control de la alarma:',
         error
       );
     }
   );
 }
 
-configureControls();
-updateControlInterface();
+prepareAlarmControlPanel();
+configureAlarmControl();
+updateAlarmControlInterface();
 
 if (firebaseConfigured && database) {
   startFirebaseMode();
