@@ -1,11 +1,190 @@
 ---
-import Welcome from '../components/Welcome.astro';
 import Layout from '../layouts/Layout.astro';
-
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+import SensorCard from '../components/SensorCard.astro';
 ---
 
-<Layout>
-	<Welcome />
+<Layout title="Estación Ambiental Inteligente">
+  <header class="site-header">
+    <div class="container site-header__content">
+      <a class="brand" href="/" aria-label="Inicio">
+        <span class="brand__logo" aria-hidden="true">🌿</span>
+        <span>
+          <strong>Estación Ambiental</strong>
+          <small>Monitoreo inteligente</small>
+        </span>
+      </a>
+
+      <div class="header-status">
+        <span class="connection-dot" id="connection-dot"></span>
+        <span id="connection-label">Iniciando…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container page-content">
+    <section class="hero-panel" aria-labelledby="dashboard-title">
+      <div>
+        <p class="eyebrow">Dashboard principal</p>
+        <h1 id="dashboard-title">Estado ambiental en tiempo real</h1>
+        <p>
+          Consulta temperatura, iluminación, lluvia y alertas recibidas desde el ESP32.
+        </p>
+      </div>
+
+      <div class="system-summary status-normal" id="system-summary">
+        <span class="system-summary__icon" id="system-icon">…</span>
+        <span>
+          <small>Estado del sistema</small>
+          <strong id="system-status">Esperando datos</strong>
+        </span>
+      </div>
+    </section>
+
+    <section class="meta-bar" aria-label="Información de actualización">
+      <div>
+        <span>Última actualización</span>
+        <strong id="last-update">Sin datos</strong>
+      </div>
+      <div>
+        <span>Origen de los datos</span>
+        <strong id="data-source">Esperando Firebase</strong>
+      </div>
+      <div>
+        <span>Modo</span>
+        <strong id="current-mode">Automático</strong>
+      </div>
+    </section>
+
+    <section class="sensor-grid" aria-label="Lecturas de sensores">
+      <SensorCard
+        id="temperature"
+        title="Temperatura"
+        icon="🌡️"
+        value="--"
+        unit=" °C"
+        description="Esperando lectura del sensor LM35."
+      />
+
+      <SensorCard
+        id="light"
+        title="Iluminación"
+        icon="☀️"
+        value="--"
+        unit=" %"
+        description="Esperando lectura del sensor LDR."
+      />
+
+      <SensorCard
+        id="rain"
+        title="Humedad / lluvia"
+        icon="🌧️"
+        value="Sin datos"
+        description="Esperando lectura del sensor de lluvia."
+      />
+
+      <SensorCard
+        id="wifi"
+        title="Conexión Wi-Fi"
+        icon="📶"
+        value="Verificando"
+        description="Comprobando conexión con Firebase."
+      />
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="panel chart-panel">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">Historial reciente</p>
+            <h2>Monitoreo de sensores</h2>
+          </div>
+          <span class="badge">Últimas 12 lecturas</span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas
+            id="sensor-chart"
+            aria-label="Gráfica de temperatura e iluminación"
+          ></canvas>
+        </div>
+      </article>
+
+      <article class="panel alert-panel">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">Alertas visuales</p>
+            <h2>Eventos del sistema</h2>
+          </div>
+          <span class="badge" id="alert-count">0 activas</span>
+        </div>
+
+        <div class="alert-list" id="alert-list">
+          <div class="empty-state">
+            <span aria-hidden="true">…</span>
+            <p>Esperando información del sistema.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel controls-panel">
+      <div class="panel__header">
+        <div>
+          <p class="eyebrow">Funciones adicionales</p>
+          <h2>Control manual de actuadores</h2>
+        </div>
+
+        <div class="mode-switch" role="group" aria-label="Modo de funcionamiento">
+          <button class="mode-button active" type="button" data-mode="automatico">
+            Automático
+          </button>
+          <button class="mode-button" type="button" data-mode="manual">
+            Manual
+          </button>
+        </div>
+      </div>
+
+      <p class="controls-note" id="controls-note">
+        En modo automático, el ESP32 decide qué actuadores activar según las lecturas.
+      </p>
+
+      <div class="control-grid">
+        <button class="control-button" type="button" data-control="led" aria-pressed="false">
+          <span aria-hidden="true">💡</span>
+          <span>
+            <strong>LED</strong>
+            <small>Apagado</small>
+          </span>
+        </button>
+
+        <button class="control-button" type="button" data-control="buzzer" aria-pressed="false">
+          <span aria-hidden="true">🔊</span>
+          <span>
+            <strong>Buzzer</strong>
+            <small>Apagado</small>
+          </span>
+        </button>
+
+        <button
+          class="control-button active"
+          type="button"
+          data-control="alarma"
+          aria-pressed="true"
+        >
+          <span aria-hidden="true">🚨</span>
+          <span>
+            <strong>Alarmas</strong>
+            <small>Activadas</small>
+          </span>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Proyecto de estación ambiental inteligente · ESP32 + Astro + Firebase</p>
+    </div>
+  </footer>
+
+  <script src="../scripts/dashboard.ts"></script>
 </Layout>

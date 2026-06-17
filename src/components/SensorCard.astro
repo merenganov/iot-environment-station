@@ -1,0 +1,24 @@
+---
+interface Props {
+  id: string;
+  title: string;
+  icon: string;
+  value: string;
+  unit?: string;
+  description: string;
+}
+
+const { id, title, icon, value, unit = '', description } = Astro.props;
+---
+
+<article class="sensor-card status-normal" id={`card-${id}`} data-sensor-card={id}>
+  <div class="sensor-card__top">
+    <span class="sensor-card__icon" aria-hidden="true">{icon}</span>
+    <span class="status-pill" id={`status-${id}`}>Normal</span>
+  </div>
+  <p class="sensor-card__title">{title}</p>
+  <p class="sensor-card__value">
+    <span id={`value-${id}`}>{value}</span><span class="sensor-card__unit" id={`unit-${id}`}>{unit}</span>
+  </p>
+  <p class="sensor-card__description" id={`description-${id}`}>{description}</p>
+</article>
